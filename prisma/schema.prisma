@@ -1,0 +1,293 @@
+// Sistema de Controle de Estoque para Licitações Públicas
+// Prisma Schema
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "windows", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USUÁRIOS E AUTENTICAÇÃO
+// ============================================
+
+model Perfil {
+  id          Int          @id @default(autoincrement())
+  nome        String       @unique
+  descricao  String?
+  usuarios    Usuario[]
+  ativo       Boolean      @default(true)
+  criado_em   DateTime     @default(now())
+  atualizado  DateTime     @updatedAt
+
+  @@map("perfis")
+}
+
+model Usuario {
+  id          Int          @id @default(autoincrement())
+  nome        String
+  email       String       @unique
+  senha       String
+  perfil_id   Int
+  perfil      Perfil       @relation(fields: [perfil_id], references: [id])
+  ativo       Boolean      @default(true)
+  criado_em   DateTime     @default(now())
+  atualizado  DateTime     @updatedAt
+  auditorias  Auditoria[]
+
+  @@map("usuarios")
+}
+
+// ============================================
+// CADASTROS BÁSICOS
+// ============================================
+
+model Secretaria {
+  id          Int          @id @default(autoincrement())
+  nome        String
+  sigla       String       @unique
+  setores     Setor[]
+  pedidos     Pedido[]
+  ativo       Boolean      @default(true)
+  criado_em   DateTime     @default(now())
+  atualizado  DateTime     @updatedAt
+
+  @@map("secretarias")
+}
+
+model Setor {
+  id             Int           @id @default(autoincrement())
+  nome           String
+  secretaria_id  Int
+  secretaria     Secretaria    @relation(fields: [secretaria_id], references: [id])
+  pedidos        Pedido[]
+  ativo          Boolean       @default(true)
+  criado_em      DateTime      @default(now())
+  atualizado     DateTime      @updatedAt
+
+  @@map("setores")
+}
+
+model Fornecedor {
+  id          Int          @id @default(autoincrement())
+  codigo      String       @unique
+  nome        String
+  cnpj        String?
+  contato     String?
+  telefone    String?
+  email       String?
+  endereco    String?
+  produtos    Produto[]
+  aquisicoes  Aquisicao[]
+  ativo       Boolean      @default(true)
+  criado_em   DateTime     @default(now())
+  atualizado  DateTime     @updatedAt
+
+  @@map("fornecedores")
+}
+
+model Categoria {
+  id          Int          @id @default(autoincrement())
+  nome        String       @unique
+  descricao  String?
+  produtos    Produto[]
+  ativo       Boolean      @default(true)
+  criado_em   DateTime     @default(now())
+  atualizado  DateTime     @updatedAt
+
+  @@map("categorias")
+}
+
+model Unidade {
+  id          Int          @id @default(autoincrement())
+  sigla       String       @unique
+  descricao  String
+  produtos    Produto[]
+  ativo       Boolean      @default(true)
+  criado_em   DateTime     @default(now())
+  atualizado  DateTime     @updatedAt
+
+  @@map("unidades")
+}
+
+model Marca {
+  id          Int          @id @default(autoincrement())
+  nome        String       @unique
+  produtos    Produto[]
+  ativo       Boolean      @default(true)
+  criado_em   DateTime     @default(now())
+  atualizado  DateTime     @updatedAt
+
+  @@map("marcas")
+}
+
+// ============================================
+// ESTOQUE
+// ============================================
+
+model Produto {
+  id              Int                  @id @default(autoincrement())
+  codigo          String               @unique
+  descricao       String
+  categoria_id    Int
+  categoria       Categoria            @relation(fields: [categoria_id], references: [id])
+  unidade_id      Int
+  unidade         Unidade              @relation(fields: [unidade_id], references: [id])
+  marca_id        Int?
+  marca           Marca?               @relation(fields: [marca_id], references: [id])
+  fornecedor_id   Int?
+  fornecedor      Fornecedor?          @relation(fields: [fornecedor_id], references: [id])
+  saldo_atual     Float                @default(0)
+  saldo_minimo    Float                @default(0)
+  localizacao     String?
+  ativo           Boolean              @default(true)
+  criado_em       DateTime             @default(now())
+  atualizado      DateTime             @updatedAt
+
+  movimentacoes   MovimentacaoEstoque[]
+  itensPedido     ItemPedido[]
+
+  @@map("produtos")
+}
+
+model MovimentacaoEstoque {
+  id              Int          @id @default(autoincrement())
+  produto_id      Int
+  produto         Produto      @relation(fields: [produto_id], references: [id])
+  tipo            String       // 'ENTRADA', 'SAIDA', 'TRANSFERENCIA'
+  quantidade      Float
+  saldo_anterior  Float
+  saldo_novo      Float
+  data            DateTime     @default(now())
+  observacao      String?
+  usuario_id      Int
+
+  @@map("movimentacoes_estoque")
+}
+
+// ============================================
+// AQUISIÇÕES (LICITAÇÕES)
+// ============================================
+
+model Aquisicao {
+  id              Int                  @id @default(autoincrement())
+  numero_proc     String
+  modalidade      String               // 'PREGAO', 'DISPENSA', 'INEXIGIBILIDADE', 'CHAMADA_PUBLICA'
+  fornecedor_id   Int
+  fornecedor      Fornecedor           @relation(fields: [fornecedor_id], references: [id])
+  numero_contrato String?
+  data_inicio     DateTime?
+  data_fim        DateTime?
+  observacoes     String?
+  possui_aditivos Boolean              @default(false)
+  ativo           Boolean              @default(true)
+  criado_em       DateTime             @default(now())
+  atualizado      DateTime             @updatedAt
+
+  aditivos        AditivoContrato[]
+  produtos        ProdutoAquisicao[]
+
+  @@map("aquisicoes")
+}
+
+model AditivoContrato {
+  id              Int          @id @default(autoincrement())
+  aquisicao_id    Int
+  aquisicao       Aquisicao    @relation(fields: [aquisicao_id], references: [id])
+  descricao       String
+  data_inicio     DateTime
+  data_fim        DateTime
+  criado_em       DateTime     @default(now())
+
+  @@map("aditivos_contrato")
+}
+
+model ProdutoAquisicao {
+  id              Int          @id @default(autoincrement())
+  aquisicao_id    Int
+  aquisicao       Aquisicao    @relation(fields: [aquisicao_id], references: [id])
+  descricao       String
+  unidade         String
+  marca           String?
+  quantidade      Float
+  preco_unitario  Float
+  prazo_entrega   Int?
+  criado_em       DateTime     @default(now())
+
+  @@map("produtos_aquisicao")
+}
+
+// ============================================
+// PEDIDOS
+// ============================================
+
+model Pedido {
+  id              Int          @id @default(autoincrement())
+  numero          String       @unique
+  data_pedido     DateTime     @default(now())
+  secretaria_id   Int
+  secretaria      Secretaria   @relation(fields: [secretaria_id], references: [id])
+  setor_id        Int
+  setor           Setor        @relation(fields: [setor_id], references: [id])
+  observacoes     String?
+  pdf_path        String?
+  ativo           Boolean      @default(true)
+  criado_em       DateTime     @default(now())
+  atualizado      DateTime     @updatedAt
+
+  itens           ItemPedido[]
+
+  @@map("pedidos")
+}
+
+model SecretarioCompras {
+  id          Int          @id @default(autoincrement())
+  nome        String
+  cargo       String       @default("Secretário(a) de Compras")
+  matricula   String?      @unique
+  email       String?
+  telefone    String?
+  ativo       Boolean      @default(true)
+  criado_em   DateTime     @default(now())
+  atualizado  DateTime     @updatedAt
+
+  @@map("secretarios_compras")
+}
+
+model ItemPedido {
+  id              Int          @id @default(autoincrement())
+  pedido_id       Int
+  pedido          Pedido       @relation(fields: [pedido_id], references: [id])
+  produto_id      Int
+  produto         Produto      @relation(fields: [produto_id], references: [id])
+  quantidade      Float
+  preco_unitario  Float        @default(0)
+  disponivel      Boolean      @default(true)
+  observacao      String?
+
+  @@map("itens_pedido")
+}
+
+// ============================================
+// AUDITORIA
+// ============================================
+
+model Auditoria {
+  id              Int      @id @default(autoincrement())
+  usuario_id      Int?
+  usuario         Usuario? @relation(fields: [usuario_id], references: [id])
+  acao            String   // 'INSERT', 'UPDATE', 'DELETE'
+  tabela          String
+  registro_id     Int?
+  dados_antigos   String?  // JSON string
+  dados_novos     String?  // JSON string
+  ip              String?
+  user_agent      String?
+  criado_em       DateTime @default(now())
+
+  @@map("auditoria")
+}
