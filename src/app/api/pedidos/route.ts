@@ -191,31 +191,88 @@ export async function POST(request: NextRequest) {
         })
       )
 
-      // Create pedido
-      const pedido = await db.pedido.create({
-        data: {
-          numero,
-          secretaria_id: parseInt(secretaria_id),
-          setor_id: parseInt(setor_id),
-          observacoes: observacoes || null,
-          itens: {
-            create: itensComProdutoId
-          }
-        },
-        include: {
-          secretaria: true,
-          setor: true,
-          itens: {
-            include: {
-              produto: {
-                include: {
-                  fornecedor: true,
-                  unidade: true
+      // Create pedido using transaction to ensure stock consistency
+      const pedido = await db.$transaction(async (tx) => {
+        // Create pedido with items
+        const novoPedido = await tx.pedido.create({
+          data: {
+            numero,
+            secretaria_id: parseInt(secretaria_id),
+            setor_id: parseInt(setor_id),
+            observacoes: observacoes || null,
+            itens: {
+              create: itensComProdutoId
+            }
+          },
+          include: {
+            secretaria: true,
+            setor: true,
+            itens: {
+              include: {
+                produto: {
+                  include: {
+                    fornecedor: true,
+                    unidade: true
+                  }
                 }
               }
             }
           }
+        })
+
+        // Create stock movements for each item (SAIDA)
+        for (const item of novoPedido.itens) {
+          // Get current product balance
+          const produto = await tx.produto.findUnique({
+            where: { id: item.produto_id }
+          })
+
+          if (!produto) {
+            throw new Error(`Produto ${item.produto_id} não encontrado`)
+          }
+
+          const saldo_anterior = produto.saldo_atual
+          const quantidade = item.quantidade
+
+          // Check if there's enough stock
+          if (saldo_anterior < quantidade) {
+            throw new Error(
+              `Saldo insuficiente para o produto ${produto.descricao}. ` +
+              `Saldo atual: ${saldo_anterior}, Quantidade solicitada: ${quantidade}`
+            )
+          }
+
+          const saldo_novo = saldo_anterior - quantidade
+
+          // Create stock movement
+          await tx.movimentacaoEstoque.create({
+            data: {
+              produto_id: item.produto_id,
+              tipo: 'SAIDA',
+              quantidade: quantidade,
+              saldo_anterior: saldo_anterior,
+              saldo_novo: saldo_novo,
+              observacao: `Saída referente ao pedido ${novoPedido.numero}`,
+              usuario_id: 1 // TODO: Get from authenticated user
+            }
+          })
+
+          // Update product balance
+          await tx.produto.update({
+            where: { id: item.produto_id },
+            data: { saldo_atual: saldo_novo }
+          })
+
+          console.log(
+            `[Pedido ${novoPedido.numero}] Movimentação de estoque criada: ` +
+            `Produto ${produto.descricao} (${item.produto_id}), ` +
+            `Saída: ${quantidade}, ` +
+            `Saldo anterior: ${saldo_anterior}, ` +
+            `Saldo novo: ${saldo_novo}`
+          )
         }
+
+        return novoPedido
       })
 
       pedidosCriados.push(pedido)

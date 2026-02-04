@@ -76,17 +76,74 @@ export default function LLMPage() {
     setInput('')
     setIsLoading(true)
 
-    // Simulate LLM response (will be replaced with actual API call)
-    setTimeout(() => {
+    try {
+      const response = await fetch('/api/llm/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          pergunta: userMessage.content,
+          contexto: 'Contexto do sistema de controle de estoque para processos de licitação pública.'
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error?.message || 'Erro ao processar pergunta')
+      }
+
+      if (!data.success) {
+        throw new Error(data.error || 'Erro ao processar resposta da LLM')
+      }
+
+      let assistantContent = ''
+
+      if (data.data) {
+        if (data.data.resposta) {
+          assistantContent = data.data.resposta
+        } else if (typeof data.data === 'string') {
+          assistantContent = data.data
+        } else {
+          assistantContent = JSON.stringify(data.data, null, 2)
+        }
+      } else {
+        assistantContent = 'Não foi possível obter uma resposta da LLM.'
+      }
+
       const assistantMessage: Message = {
         id: messages.length + 2,
         role: 'assistant',
-        content: 'Esta é uma resposta simulada do assistente IA. Na versão final, a LLM local (Ollama) processará sua pergunta e fornecerá uma resposta baseada nos dados reais do sistema.',
+        content: assistantContent,
         timestamp: new Date()
       }
+
       setMessages((prev) => [...prev, assistantMessage])
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido'
+
+      let errorContent = ''
+
+      if (errorMessage.includes('fetch failed') || errorMessage.includes('ECONNREFUSED')) {
+        errorContent = '⚠️ **Erro de conexão com Ollama**\n\nNão foi possível conectar ao servidor Ollama. Verifique se:\n\n• O Ollama está rodando (execute: `ollama serve`)\n• O modelo `qwen3:1.7b` está instalado (execute: `ollama pull qwen3:1.7b`)\n• O servidor está acessível em `http://localhost:11434`\n\nSe o problema persistir, verifique os logs do Ollama para mais detalhes.'
+      } else if (errorMessage.includes('model')) {
+        errorContent = '⚠️ **Erro de modelo**\n\nO modelo configurado não foi encontrado. Verifique se:\n\n• O modelo `qwen3:1.7b` está instalado no Ollama\n• Execute: `ollama list` para ver os modelos disponíveis\n• Execute: `ollama pull qwen3:1.7b` para instalar o modelo'
+      } else {
+        errorContent = `⚠️ **Erro ao processar pergunta**\n\n${errorMessage}\n\nTente novamente ou entre em contato com o suporte técnico.`
+      }
+
+      const assistantMessage: Message = {
+        id: messages.length + 2,
+        role: 'assistant',
+        content: errorContent,
+        timestamp: new Date()
+      }
+
+      setMessages((prev) => [...prev, assistantMessage])
+    } finally {
       setIsLoading(false)
-    }, 1500)
+    }
   }
 
   const handleQuickAction = (prompt: string) => {

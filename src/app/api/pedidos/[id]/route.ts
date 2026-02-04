@@ -139,15 +139,68 @@ export async function DELETE(
     //   )
     // }
 
-    // Soft delete
-    await db.pedido.update({
-      where: { id: pedidoId },
-      data: { ativo: false }
+    // Use transaction to delete pedido and return items to stock
+    await db.$transaction(async (tx) => {
+      // Get all items from the pedido before deletion
+      const itensDoPedido = await tx.itemPedido.findMany({
+        where: { pedido_id: pedidoId },
+        include: {
+          produto: true
+        }
+      })
+
+      // Create stock movements to return items (ENTRADA)
+      for (const item of itensDoPedido) {
+        const produto = await tx.produto.findUnique({
+          where: { id: item.produto_id }
+        })
+
+        if (!produto) {
+          throw new Error(`Produto ${item.produto_id} não encontrado`)
+        }
+
+        const saldo_anterior = produto.saldo_atual
+        const quantidade = item.quantidade
+        const saldo_novo = saldo_anterior + quantidade
+
+        // Create stock movement (ENTRADA - return to stock)
+        await tx.movimentacaoEstoque.create({
+          data: {
+            produto_id: item.produto_id,
+            tipo: 'ENTRADA',
+            quantidade: quantidade,
+            saldo_anterior: saldo_anterior,
+            saldo_novo: saldo_novo,
+            observacao: `Devolução ao estoque devido à exclusão do pedido ${pedido.numero}`,
+            usuario_id: 1 // TODO: Get from authenticated user
+          }
+        })
+
+        // Update product balance
+        await tx.produto.update({
+          where: { id: item.produto_id },
+          data: { saldo_atual: saldo_novo }
+        })
+
+        console.log(
+          `[Pedido ${pedido.numero}] Movimentação de estoque criada: ` +
+          `Produto ${produto.descricao} (${item.produto_id}), ` +
+          `Entrada: ${quantidade}, ` +
+          `Saldo anterior: ${saldo_anterior}, ` +
+          `Saldo novo: ${saldo_novo}`
+        )
+      }
+
+      // Soft delete the pedido
+      await tx.pedido.update({
+        where: { id: pedidoId },
+        data: { ativo: false }
+      })
     })
 
     return NextResponse.json({
       success: true,
-      message: 'Pedido excluído com sucesso'
+      message: 'Pedido excluído com sucesso e itens devolvidos ao estoque'
     })
   } catch (error) {
     console.error('Erro ao excluir pedido:', error)
@@ -249,7 +302,7 @@ export async function PUT(
       }
     })
 
-    // Se itens foram fornecidos, atualizar os itens
+    // Se itens foram fornecidos, atualizar os itens e o estoque
     if (itens && Array.isArray(itens)) {
       // Buscar todos os itens atuais do pedido
       const itensAtuais = await db.itemPedido.findMany({
@@ -349,17 +402,112 @@ export async function PUT(
         })
       )
 
-      // Deletar todos os itens atuais do pedido
-      await db.itemPedido.deleteMany({
-        where: { pedido_id: pedidoId }
-      })
+      // Use transaction to update items and stock
+      await db.$transaction(async (tx) => {
+        // Deletar todos os itens atuais do pedido
+        await tx.itemPedido.deleteMany({
+          where: { pedido_id: pedidoId }
+        })
 
-      // Criar todos os itens novamente
-      await db.itemPedido.createMany({
-        data: itensParaProcessar.map(item => ({
-          pedido_id: pedidoId,
-          ...item
-        }))
+        // Criar todos os itens novamente
+        await tx.itemPedido.createMany({
+          data: itensParaProcessar.map(item => ({
+            pedido_id: pedidoId,
+            ...item
+          }))
+        })
+
+        // Calculate stock differences and create movements
+        // Map old items by produto_id
+        const itensAntigosMap = new Map<number, number>()
+        for (const item of itensAtuais) {
+          itensAntigosMap.set(item.produto_id, item.quantidade)
+        }
+
+        // Map new items by produto_id
+        const itensNovosMap = new Map<number, number>()
+        for (const item of itensParaProcessar) {
+          itensNovosMap.set(item.produto_id, item.quantidade)
+        }
+
+        // Get all unique produto_ids
+        const allProdutoIds = new Set([
+          ...itensAntigosMap.keys(),
+          ...itensNovosMap.keys()
+        ])
+
+        // Process each product
+        for (const produtoId of allProdutoIds) {
+          const quantidadeAntiga = itensAntigosMap.get(produtoId) || 0
+          const quantidadeNova = itensNovosMap.get(produtoId) || 0
+          const diferenca = quantidadeNova - quantidadeAntiga
+
+          // Skip if no change
+          if (diferenca === 0) {
+            continue
+          }
+
+          // Get current product
+          const produto = await tx.produto.findUnique({
+            where: { id: produtoId }
+          })
+
+          if (!produto) {
+            throw new Error(`Produto ${produtoId} não encontrado`)
+          }
+
+          const saldo_anterior = produto.saldo_atual
+          let saldo_novo: number
+          let tipo: 'ENTRADA' | 'SAIDA'
+          let observacao: string
+
+          if (diferenca > 0) {
+            // Quantity increased - create SAIDA
+            tipo = 'SAIDA'
+            if (saldo_anterior < diferenca) {
+              throw new Error(
+                `Saldo insuficiente para o produto ${produto.descricao}. ` +
+                `Saldo atual: ${saldo_anterior}, Quantidade adicional: ${diferenca}`
+              )
+            }
+            saldo_novo = saldo_anterior - diferenca
+            observacao = `Aumento de quantidade no pedido ${pedido.numero}. Antes: ${quantidadeAntiga}, Depois: ${quantidadeNova}`
+          } else {
+            // Quantity decreased - create ENTRADA (return to stock)
+            tipo = 'ENTRADA'
+            const quantidadeDevolucao = Math.abs(diferenca)
+            saldo_novo = saldo_anterior + quantidadeDevolucao
+            observacao = `Diminuição de quantidade no pedido ${pedido.numero}. Devolução ao estoque. Antes: ${quantidadeAntiga}, Depois: ${quantidadeNova}`
+          }
+
+          // Create stock movement
+          await tx.movimentacaoEstoque.create({
+            data: {
+              produto_id: produtoId,
+              tipo,
+              quantidade: Math.abs(diferenca),
+              saldo_anterior,
+              saldo_novo,
+              observacao,
+              usuario_id: 1 // TODO: Get from authenticated user
+            }
+          })
+
+          // Update product balance
+          await tx.produto.update({
+            where: { id: produtoId },
+            data: { saldo_atual: saldo_novo }
+          })
+
+          console.log(
+            `[Pedido ${pedido.numero}] Movimentação de estoque criada: ` +
+            `Produto ${produto.descricao} (${produtoId}), ` +
+            `Tipo: ${tipo}, ` +
+            `Quantidade: ${Math.abs(diferenca)}, ` +
+            `Saldo anterior: ${saldo_anterior}, ` +
+            `Saldo novo: ${saldo_novo}`
+          )
+        }
       })
 
       // Buscar pedido atualizado com itens

@@ -1,0 +1,26 @@
+[
+  {
+    "pergunta": "Qual é o saldo atual do limpador de pisos?",
+    "success": true,
+    "data": {
+      "success": true,
+      "data": "A pergunta \"Qual é o saldo atual do limpador de pisos?\" é um pouco ambígua, pois \"saldo atual\" pode se referir a diferentes coisas, dependendo do contexto. Aqui estão algumas possibilidades:\n\n1. **Saldo financeiro de uma empresa**: Se você está se referindo a uma empresa que vende limpadores de pisos, o \"saldo atual\" poderia ser o lucro, despesas, caixa ou outros indicadores financeiros. Para obter essa informação, seria necessário consultar relatórios financeiros da empresa ou uma fonte confiável.\n\n2. **Saldo de um produto ou serviço**: Se você está se referindo a um produto específico (como um limpador de pisos de alta tecnologia) ou a um serviço, o \"saldo atual\" pode indicar a quantidade disponível, a disponibilidade em estoque, ou outros dados de mercado. No entanto, sem mais detalhes, é difícil fornecer um valor numérico exato.\n\n3. **Saldo de uma conta ou sistema**: Se o \"saldo atual\" refere-se a uma conta bancária ou a um sistema de gestão de estoque, a resposta depende de contexto adicional.\n\n**Sugestão**: Para obter informações precisas, é melhor fornecer mais detalhes, como o nome da empresa, o tipo de produto ou o contexto específico em que o \"saldo atual\" está sendo referido. Se você puder explicar melhor, posso ajudar a orientar melhor!"
+    }
+  },
+  {
+    "pergunta": "Quais produtos estão com estoque crítico?",
+    "success": true,
+    "data": {
+      "success": true,
+      "data": "A \"estoque crítico\" refere-se a produtos que estão em **nível de disponibilidade insuficiente** para garantir a oferta contínua, o que pode gerar riscos como **falta de suprimentos**, **preços elevados**, **problemas de logística** ou **interrupções na produção**. A lista de produtos com estoque crítico varia conforme a indústria, região e circunstâncias, mas algumas categorias comuns incluem:\n\n---\n\n### **1. Produtos Essenciais e de Alta Demanda**\n- **Medicamentos e dispositivos médicos**: Em períodos de crise sanitária (ex.: pandemia), itens como **vacinas, antibióticos, equipamentos de saúde** podem estar em estoque críticos.\n- **Alimentos**: Produtos como **pães, frutas, legumes, produtos de higiene** podem ser afetados por desalinhamentos na cadeia de suprimentos.\n- **Acessórios e equipamentos**: **Cães, cavalos, ferramentas de construção** em mercados de alto volume podem ter escassez.\n\n---\n\n### **2. Produtos de Cadeia de Suprimento Frágil**\n- **Materiais de construção**: **Aços, concreto, madeiras** em regiões afetadas por desastres naturais (ex.: terremotos, inundações).\n- **Componentes de automóveis**: **Válvulas, eixos, faróis** em indústrias de automobilismo com desalinhamentos na produção.\n- **Equipamentos industriais**: **Motoristas, sensores, sistemas de controle** em indústrias com desafios logísticos.\n\n---\n\n### **3. Produtos de Alta Inovação ou Tecnologia**\n- **Tecnologias emergentes**: **Robôs industriais, sensores de IA, software de inteligência artificial** em empresas que dependem de fornecedores globais.\n- **Produtos de última geração**: **Celulares, tablets, laptops** em mercados com altas demandas e desalinhamentos na produção.\n\n---\n\n### **4. Produtos de Importação ou Comércio Internacional**\n- **Produtos importados**: **Líquidos, produtos de alta tecnologia, itens de luxo** em regiões com desafios na logística (ex.: desastres naturais, bloqueios comerciais).\n- **Produtos de exportação**: **Materiais de construção, equipamentos de mineração** em países com desafios na cadeia de suprimentos.\n\n---\n\n### **Fatores que Afectam o Estoque Crítico**\n- **Desastres naturais**: Tornam a cadeia de suprimentos mais frágil.\n- **Conflitos geopolíticos**: Bloqueiam rotas de suprimento.\n- **Inflação e custos elevados**: A"
+    }
+  },
+  {
+    "pergunta": "Quantos produtos temos no estoque?",
+    "success": true,
+    "data": {
+      "success": true,
+      "data": "O número de produtos no estoque é automaticamente atualizado conforme você compra ou retira itens. Se quiser saber o valor exato, pode me dizer, e eu te direi o número atual de produtos no estoque. 😊"
+    }
+  }
+]

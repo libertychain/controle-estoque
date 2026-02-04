@@ -147,6 +147,80 @@ export async function POST(request: NextRequest) {
       }
     })
 
+    // Criar automaticamente os produtos no catálogo (tabela Produto)
+    if (produtos && produtos.length > 0) {
+      // Buscar ou criar categoria "Geral"
+      let categoria = await db.categoria.findUnique({
+        where: { nome: 'Geral' }
+      })
+      if (!categoria) {
+        categoria = await db.categoria.create({
+          data: { nome: 'Geral' }
+        })
+      }
+
+      // Criar produtos no catálogo
+      for (let i = 0; i < produtos.length; i++) {
+        const p = produtos[i]
+        const produtoAquisicao = aquisicao.produtos[i]
+
+        // Buscar ou criar unidade
+        let unidade = await db.unidade.findUnique({
+          where: { sigla: p.unidade.toUpperCase() }
+        })
+        if (!unidade) {
+          unidade = await db.unidade.create({
+            data: { 
+              sigla: p.unidade.toUpperCase(),
+              descricao: p.unidade
+            }
+          })
+        }
+
+        // Buscar ou criar marca
+        let marca = null
+        if (p.marca) {
+          marca = await db.marca.findUnique({
+            where: { nome: p.marca.toUpperCase() }
+          })
+          if (!marca) {
+            marca = await db.marca.create({
+              data: { nome: p.marca.toUpperCase() }
+            })
+          }
+        }
+
+        // Verificar se o produto já existe no catálogo
+        const produtoExistente = await db.produto.findFirst({
+          where: {
+            descricao: p.descricao,
+            categoria_id: categoria.id,
+            unidade_id: unidade.id
+          }
+        })
+
+        if (!produtoExistente) {
+          // Criar código único para o produto
+          const codigo = `PAQ-${aquisicao.numero_proc}-${String(i + 1).padStart(2, '0')}`
+
+          // Criar produto no catálogo
+          await db.produto.create({
+            data: {
+              codigo,
+              descricao: p.descricao,
+              categoria_id: categoria.id,
+              unidade_id: unidade.id,
+              marca_id: marca?.id,
+              fornecedor_id: parseInt(fornecedor_id),
+              saldo_atual: 0,
+              saldo_minimo: 0,
+              ativo: true
+            }
+          })
+        }
+      }
+    }
+
     return NextResponse.json(
       {
         success: true,
