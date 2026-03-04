@@ -78,8 +78,6 @@ This scaffold is optimized for use:
 - **📝 Documentation** - Auto-generate comprehensive documentation
 - **🚀 Optimization** - Performance improvements and best practices
 
-Ready to build something amazing? Start chatting with Z.ai at [chat.z.ai](https://chat.z.ai) and experience the future of AI-powered development!
-
 ## 📁 Project Structure
 
 ```
@@ -124,12 +122,6 @@ This scaffold includes a comprehensive set of modern web development tools:
 - **Image Optimization**: Automatic image processing with Sharp
 - **Type Safety**: End-to-end TypeScript with Zod validation
 - **Essential Hooks**: 100+ useful React hooks with ReactUse for common patterns
-
-## 🤝 Get Started with Z.ai
-
-1. **Clone this scaffold** to jumpstart your project
-2. **Start building** with intelligent code generation and assistance
-3. **Deploy with confidence** using the production-ready setup
 
 ---
 
