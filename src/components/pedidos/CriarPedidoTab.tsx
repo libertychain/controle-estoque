@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
+import { useFetch } from '@/hooks/use-fetch'
 import { ProdutosAquisicaoDialog } from './ProdutosAquisicaoDialog'
 import {
   Search,
@@ -105,6 +106,7 @@ export interface CriarPedidoTabProps {
 
 export function CriarPedidoTab({ onClose, onPedidoCriado }: CriarPedidoTabProps) {
   const { toast } = useToast()
+  const { fetch: authenticatedFetch } = useFetch()
   
   // Estados para criação de pedidos
   const [secretarias, setSecretarias] = useState<Secretaria[]>([])
@@ -170,7 +172,7 @@ export function CriarPedidoTab({ onClose, onPedidoCriado }: CriarPedidoTabProps)
   const loadSecretarias = async () => {
     try {
       setIsLoadingSecretarias(true)
-      const response = await fetch('/api/secretarias')
+      const response = await authenticatedFetch('/api/secretarias')
       const data = await response.json()
       
       if (data.success) {
@@ -186,7 +188,7 @@ export function CriarPedidoTab({ onClose, onPedidoCriado }: CriarPedidoTabProps)
   const loadSetores = async (secretariaId: number) => {
     try {
       setIsLoadingSetores(true)
-      const response = await fetch(`/api/setores?secretaria_id=${secretariaId}`)
+      const response = await authenticatedFetch(`/api/setores?secretaria_id=${secretariaId}`)
       const data = await response.json()
       
       if (data.success) {
@@ -202,7 +204,7 @@ export function CriarPedidoTab({ onClose, onPedidoCriado }: CriarPedidoTabProps)
   const loadAquisicoes = async () => {
     try {
       setIsLoadingAquisicoes(true)
-      const response = await fetch('/api/aquisicoes?limit=100')
+      const response = await authenticatedFetch('/api/aquisicoes?limit=100')
       const data = await response.json()
       
       if (data.success) {
@@ -225,8 +227,12 @@ export function CriarPedidoTab({ onClose, onPedidoCriado }: CriarPedidoTabProps)
         url += `&aquisicao_id=${selectedAquisicao}`
       }
       
-      const response = await fetch(url)
+      console.log('🔍 Buscando produtos:', url)
+      
+      const response = await authenticatedFetch(url)
       const data = await response.json()
+      
+      console.log('📦 Produtos encontrados:', JSON.stringify(data.data.produtos, null, 2))
       
       if (data.success) {
         setProdutos(data.data.produtos)
@@ -251,9 +257,13 @@ export function CriarPedidoTab({ onClose, onPedidoCriado }: CriarPedidoTabProps)
         return
       }
       
+      console.log('🔍 Carregando produtos da aquisição:', selectedAquisicao)
+      
       const url = `/api/produtos-aquisicao?aquisicao_id=${selectedAquisicao}&limit=500`
-      const response = await fetch(url)
+      const response = await authenticatedFetch(url)
       const data = await response.json()
+      
+      console.log('📦 Produtos carregados:', JSON.stringify(data.data.produtos, null, 2))
       
       if (data.success) {
         setProdutosAquisicao(data.data.produtos)
@@ -285,6 +295,15 @@ export function CriarPedidoTab({ onClose, onPedidoCriado }: CriarPedidoTabProps)
   }
   
   const adicionarAoCarrinho = (produto: Produto, quantidade: string = '1') => {
+    console.log('➕ Adicionando produto ao carrinho:', JSON.stringify({
+      id: produto.id,
+      descricao: produto.descricao,
+      fornecedor: produto.fornecedor,
+      fornecedor_id: produto.fornecedor?.id,
+      produto_aquisicao_id: produto.produto_aquisicao_id,
+      quantidade
+    }, null, 2))
+    
     setCarrinho(prevCarrinho => {
       const itemExistente = prevCarrinho.find(item => item.produto.id === produto.id)
       
@@ -329,10 +348,21 @@ export function CriarPedidoTab({ onClose, onPedidoCriado }: CriarPedidoTabProps)
   const agruparPorFornecedor = (): PedidoPreview[] => {
     const grupos: { [key: number]: PedidoPreview } = {}
     
-    carrinho.forEach(item => {
+    console.log('🛒 Carrinho completo:', JSON.stringify(carrinho, null, 2))
+    
+    carrinho.forEach((item, index) => {
       const fornecedor = item.produto.fornecedor
       
-      if (!fornecedor) {
+      console.log(`🛒 Item ${index}:`, JSON.stringify({
+        produto_id: item.produto.id,
+        produto_aquisicao_id: item.produto.produto_aquisicao_id,
+        fornecedor: fornecedor,
+        fornecedor_id: fornecedor?.id,
+        quantidade: item.quantidade
+      }, null, 2))
+      
+      if (!fornecedor || !fornecedor.id) {
+        console.log(`⚠️ Item ${index} não tem fornecedor válido, pulando...`)
         return
       }
       
@@ -349,10 +379,16 @@ export function CriarPedidoTab({ onClose, onPedidoCriado }: CriarPedidoTabProps)
       grupos[fornecedor.id].totalItens += parseFloat(item.quantidade.toString().replace(',', '.'))
     })
     
+    console.log('📦 Grupos criados:', JSON.stringify(Object.values(grupos), null, 2))
+    
     return Object.values(grupos)
   }
   
   const handleCriarPedidos = async () => {
+    console.log('🚀 Iniciando criação de pedidos...')
+    console.log('📋 Formulário:', JSON.stringify(formData, null, 2))
+    console.log('🛒 Carrinho:', JSON.stringify(carrinho, null, 2))
+    
     // Validação
     if (!formData.secretaria_id || !formData.setor_id) {
       toast({
@@ -373,7 +409,7 @@ export function CriarPedidoTab({ onClose, onPedidoCriado }: CriarPedidoTabProps)
     }
     
     // Verificar se há produtos sem fornecedor
-    const semFornecedor = carrinho.filter(item => !item.produto.fornecedor)
+    const semFornecedor = carrinho.filter(item => !item.produto.fornecedor || !item.produto.fornecedor.id)
     if (semFornecedor.length > 0) {
       toast({
         variant: 'destructive',
@@ -386,7 +422,10 @@ export function CriarPedidoTab({ onClose, onPedidoCriado }: CriarPedidoTabProps)
     try {
       setIsCreating(true)
       
-      const pedidosPorFornecedor = agruparPorFornecedor().map(grupo => ({
+      const pedidosPreview = agruparPorFornecedor()
+      console.log('📦 Pedidos preview:', JSON.stringify(pedidosPreview, null, 2))
+      
+      const pedidosPorFornecedor = pedidosPreview.map(grupo => ({
         fornecedor_id: grupo.fornecedor.id,
         itens: grupo.itens.map(item => ({
           produto_aquisicao_id: item.produto.produto_aquisicao_id,
@@ -395,7 +434,18 @@ export function CriarPedidoTab({ onClose, onPedidoCriado }: CriarPedidoTabProps)
         }))
       }))
       
-      const response = await fetch('/api/pedidos', {
+      console.log('📦 pedidosPorFornecedor:', JSON.stringify(pedidosPorFornecedor, null, 2))
+      
+      const requestBody = {
+        secretaria_id: formData.secretaria_id,
+        setor_id: formData.setor_id,
+        observacoes: formData.observacoes,
+        pedidos_por_fornecedor: pedidosPorFornecedor
+      }
+      
+      console.log('📤 Enviando requisição para /api/pedidos:', JSON.stringify(requestBody, null, 2))
+      
+      const response = await authenticatedFetch('/api/pedidos', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -408,7 +458,14 @@ export function CriarPedidoTab({ onClose, onPedidoCriado }: CriarPedidoTabProps)
         })
       })
       
+      console.log('📥 Resposta da API:', {
+        status: response.status,
+        ok: response.ok
+      })
+      
       const data = await response.json()
+      
+      console.log('📦 Dados da resposta:', JSON.stringify(data, null, 2))
       
       if (data.success) {
         toast({

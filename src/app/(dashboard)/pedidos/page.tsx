@@ -55,6 +55,7 @@ import { WindowManagerProvider, useWindowManager } from '@/components/windows/Wi
 import { TabBar } from '@/components/windows/TabBar'
 import { DraggableWindow } from '@/components/windows/DraggableWindow'
 import { PedidoWindow } from '@/components/pedidos/PedidoWindow'
+import { useFetch } from '@/hooks/use-fetch'
 
 // Tipos
 interface Produto {
@@ -125,6 +126,7 @@ function PedidosPageContent() {
   const router = useRouter()
   const { toast } = useToast()
   const { windows, activeWindowId, openWindow, closeWindow, focusWindow, maximizeWindow, restoreWindow, minimizeWindow, updateWindowPosition, updateWindowSize } = useWindowManager()
+  const { fetch: authenticatedFetch } = useFetch()
   const [searchTerm, setSearchTerm] = useState('')
   const [pedidos, setPedidos] = useState<Pedido[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -147,7 +149,7 @@ function PedidosPageContent() {
   const loadPedidos = async () => {
     try {
       setIsLoading(true)
-      const response = await fetch('/api/pedidos')
+      const response = await authenticatedFetch('/api/pedidos')
       const data = await response.json()
       
       if (data.success) {
@@ -174,7 +176,7 @@ function PedidosPageContent() {
   const loadSecretarias = async () => {
     try {
       setIsLoadingSecretarias(true)
-      const response = await fetch('/api/secretarias')
+      const response = await authenticatedFetch('/api/secretarias')
       const data = await response.json()
       
       if (data.success) {
@@ -190,7 +192,7 @@ function PedidosPageContent() {
   const loadSetores = async (secretariaId: number) => {
     try {
       setIsLoadingSetores(true)
-      const response = await fetch(`/api/setores?secretaria_id=${secretariaId}`)
+      const response = await authenticatedFetch(`/api/setores?secretaria_id=${secretariaId}`)
       const data = await response.json()
       
       if (data.success) {
@@ -206,7 +208,7 @@ function PedidosPageContent() {
   const loadAquisicoes = async () => {
     try {
       setIsLoadingAquisicoes(true)
-      const response = await fetch('/api/aquisicoes?limit=100')
+      const response = await authenticatedFetch('/api/aquisicoes?limit=100')
       const data = await response.json()
       
       if (data.success) {
@@ -233,7 +235,7 @@ function PedidosPageContent() {
     }
 
     try {
-      const response = await fetch(`/api/pedidos/${pedidoId}`, {
+      const response = await authenticatedFetch(`/api/pedidos/${pedidoId}`, {
         method: 'DELETE'
       })
 

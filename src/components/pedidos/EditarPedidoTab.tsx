@@ -15,6 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useToast } from '@/hooks/use-toast'
+import { useFetch } from '@/hooks/use-fetch'
 import { ProdutosAquisicaoDialog } from './ProdutosAquisicaoDialog'
 import {
   Search,
@@ -72,6 +73,7 @@ export interface EditarPedidoTabProps {
 
 export function EditarPedidoTab({ pedidoId, onClose, onSave }: EditarPedidoTabProps) {
   const { toast } = useToast()
+  const { fetch: authenticatedFetch } = useFetch()
   
   // Estados para edição
   const [secretarias, setSecretarias] = useState<Secretaria[]>([])
@@ -133,9 +135,9 @@ export function EditarPedidoTab({ pedidoId, onClose, onSave }: EditarPedidoTabPr
   const loadSecretarias = async () => {
     try {
       setIsLoadingSecretarias(true)
-      const response = await fetch('/api/secretarias')
+      const response = await authenticatedFetch('/api/secretarias')
       const data = await response.json()
-      
+
       if (data.success) {
         setSecretarias(data.data.secretarias)
       }
@@ -145,13 +147,13 @@ export function EditarPedidoTab({ pedidoId, onClose, onSave }: EditarPedidoTabPr
       setIsLoadingSecretarias(false)
     }
   }
-  
+
   const loadSetores = async (secretariaId: number) => {
     try {
       setIsLoadingSetores(true)
-      const response = await fetch(`/api/setores?secretaria_id=${secretariaId}`)
+      const response = await authenticatedFetch(`/api/setores?secretaria_id=${secretariaId}`)
       const data = await response.json()
-      
+
       if (data.success) {
         setSetores(data.data.setores)
       }
@@ -161,13 +163,13 @@ export function EditarPedidoTab({ pedidoId, onClose, onSave }: EditarPedidoTabPr
       setIsLoadingSetores(false)
     }
   }
-  
+
   const loadAquisicoes = async () => {
     try {
       setIsLoadingAquisicoes(true)
-      const response = await fetch('/api/aquisicoes?limit=100')
+      const response = await authenticatedFetch('/api/aquisicoes?limit=100')
       const data = await response.json()
-      
+
       if (data.success) {
         setAquisicoes(data.data.aquisicoes)
       }
@@ -181,9 +183,9 @@ export function EditarPedidoTab({ pedidoId, onClose, onSave }: EditarPedidoTabPr
   const loadPedido = async (pedidoId: number) => {
     try {
       setIsLoadingPedido(true)
-      const response = await fetch(`/api/pedidos/${pedidoId}`)
+      const response = await authenticatedFetch(`/api/pedidos/${pedidoId}`)
       const data = await response.json()
-      
+
       if (data.success) {
         setEditFormData({
           secretaria_id: data.data.pedido.secretaria_id?.toString() || '',
@@ -191,7 +193,7 @@ export function EditarPedidoTab({ pedidoId, onClose, onSave }: EditarPedidoTabPr
           data_pedido: data.data.pedido.data_pedido ? data.data.pedido.data_pedido.split('T')[0] : '',
           observacoes: data.data.pedido.observacoes || ''
         })
-        
+
         // Carregar itens para edição
         if (data.data.pedido.itens) {
           setEditItens(data.data.pedido.itens.map((item: any) => ({
@@ -202,7 +204,7 @@ export function EditarPedidoTab({ pedidoId, onClose, onSave }: EditarPedidoTabPr
             preco_unitario: item.preco_unitario,
             observacao: item.observacao
           })))
-          
+
           // Identificar o fornecedor dos itens existentes para edição
           const primeiroItemComFornecedor = data.data.pedido.itens.find((item: any) => item.produto?.fornecedor)
           if (primeiroItemComFornecedor?.produto?.fornecedor) {
@@ -238,15 +240,15 @@ export function EditarPedidoTab({ pedidoId, onClose, onSave }: EditarPedidoTabPr
     try {
       setIsLoadingProdutos(true)
       let url = `/api/produtos-aquisicao?search=${encodeURIComponent(searchProduto)}&limit=50`
-      
+
       // Se uma aquisição foi selecionada, filtrar por ela
       if (selectedAquisicao) {
         url += `&aquisicao_id=${selectedAquisicao}`
       }
-      
-      const response = await fetch(url)
+
+      const response = await authenticatedFetch(url)
       const data = await response.json()
-      
+
       if (data.success) {
         setProdutos(data.data.produtos)
       }
@@ -256,11 +258,11 @@ export function EditarPedidoTab({ pedidoId, onClose, onSave }: EditarPedidoTabPr
       setIsLoadingProdutos(false)
     }
   }
-  
+
   const loadProdutosAquisicao = async () => {
     try {
       setIsLoadingProdutosAquisicao(true)
-      
+
       if (!selectedAquisicao) {
         toast({
           variant: 'destructive',
@@ -269,11 +271,11 @@ export function EditarPedidoTab({ pedidoId, onClose, onSave }: EditarPedidoTabPr
         })
         return
       }
-      
+
       const url = `/api/produtos-aquisicao?aquisicao_id=${selectedAquisicao}&limit=500`
-      const response = await fetch(url)
+      const response = await authenticatedFetch(url)
       const data = await response.json()
-      
+
       if (data.success) {
         setProdutosAquisicao(data.data.produtos)
         setIsViewAquisicaoDialogOpen(true)
@@ -394,7 +396,7 @@ export function EditarPedidoTab({ pedidoId, onClose, onSave }: EditarPedidoTabPr
 
     try {
       setIsSavingPedido(true)
-      const response = await fetch(`/api/pedidos/${pedidoId}`, {
+      const response = await authenticatedFetch(`/api/pedidos/${pedidoId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'

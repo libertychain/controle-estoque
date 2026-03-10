@@ -1,12 +1,119 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getAuthenticatedUser } from '@/lib/auth-middleware'
+import { handleApiError } from '@/lib/api-error-handler'
+import {
+  sanitizeString,
+  sanitizeNumber,
+  sanitizeDate,
+  sanitizeObject,
+  sanitizeArray
+} from '@/lib/input-validator'
+
+/**
+ * Função auxiliar para criar ou buscar produto com cálculo correto de saldo
+ *
+ * Esta função centraliza a lógica de criação de produtos para evitar duplicação
+ * de código entre pedidos e aquisições.
+ *
+ * @param tx - Transação Prisma
+ * @param descricao - Descrição do produto
+ * @param fornecedorId - ID do fornecedor
+ * @param categoriaId - ID da categoria (opcional, usa 'Geral' por padrão)
+ * @param unidadeId - ID da unidade (opcional, usa 'UN' por padrão)
+ * @returns Produto criado ou encontrado
+ */
+async function criarOuBuscarProduto(
+  tx: any,
+  descricao: string,
+  fornecedorId: number,
+  categoriaId?: number,
+  unidadeId?: number
+) {
+  // Buscar categoria padrão se não fornecida
+  const categoria = categoriaId
+    ? await tx.categoria.findUnique({ where: { id: categoriaId } })
+    : await tx.categoria.upsert({
+        where: { nome: 'Geral' },
+        update: {},
+        create: { nome: 'Geral' }
+      })
+
+  // Buscar unidade padrão se não fornecida
+  const unidade = unidadeId
+    ? await tx.unidade.findUnique({ where: { id: unidadeId } })
+    : await tx.unidade.upsert({
+        where: { sigla: 'UN' },
+        update: {},
+        create: { sigla: 'UN', descricao: 'Unidade' }
+      })
+
+  // Buscar produto existente
+  const produto = await tx.produto.findFirst({
+    where: {
+      descricao,
+      fornecedor_id: fornecedorId
+    }
+  })
+
+  if (produto) {
+    return produto
+  }
+
+  // Buscar itens de pedidos anteriores para calcular o saldo inicial correto
+  const itensPedidosAnteriores = await tx.itemPedido.findMany({
+    where: {
+      produto: {
+        descricao,
+        fornecedor_id: fornecedorId
+      }
+    }
+  })
+
+  // Calcular quantidade já utilizada em pedidos anteriores
+  const quantidadeUtilizada = itensPedidosAnteriores.reduce(
+    (total, item) => total + item.quantidade,
+    0
+  )
+
+  // Buscar saldo atual existente do produto (se já existe)
+  const saldoInicial = Math.max(0, (produto?.saldo_atual || 0) - quantidadeUtilizada)
+
+  // Criar novo produto
+  return await tx.produto.create({
+    data: {
+      descricao,
+      categoria_id: categoria.id,
+      unidade_id: unidade.id,
+      fornecedor_id: fornecedorId,
+      saldo_atual: saldoInicial,
+      saldo_minimo: 0
+    }
+  })
+}
 
 // GET /api/aquisicoes - Listar aquisições
 export async function GET(request: NextRequest) {
+  const usuario = getAuthenticatedUser(request)
+  
+  if (!usuario) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Usuário não autenticado'
+        }
+      },
+      { status: 401 }
+    )
+  }
+  
   try {
     const searchParams = request.nextUrl.searchParams
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '20')
+    // Validar e limitar page e limit para prevenir problemas de performance
+    const page = Math.max(1, Math.min(1000, parseInt(searchParams.get('page') || '1')))
+    const limit = Math.max(1, Math.min(100, parseInt(searchParams.get('limit') || '20')))
     const search = searchParams.get('search') || ''
 
     const skip = (page - 1) * limit
@@ -57,17 +164,7 @@ export async function GET(request: NextRequest) {
       }
     })
   } catch (error) {
-    console.error('Erro ao buscar aquisições:', error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Erro ao buscar aquisições'
-        }
-      },
-      { status: 500 }
-    )
+    return handleApiError(error, 'ao buscar aquisições')
   }
 }
 
@@ -76,34 +173,30 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
-    const {
-      numero_proc,
-      modalidade,
-      fornecedor_id,
-      numero_contrato,
-      data_inicio,
-      data_fim,
-      observacoes,
-      produtos
-    } = body
+    // Sanitizar e validar todos os campos usando o utilitário
+    const sanitizedBody = sanitizeObject(body, {
+      numero_proc: (val) => sanitizeString(val, 50),
+      modalidade: (val) => sanitizeString(val, 50),
+      fornecedor_id: (val) => sanitizeNumber(val, 1),
+      numero_contrato: (val) => sanitizeString(val, 50),
+      data_inicio: (val) => sanitizeDate(val),
+      data_fim: (val) => sanitizeDate(val),
+      observacoes: (val) => sanitizeString(val, 2000)
+    })
 
-    // Validate required fields
-    if (!numero_proc || !modalidade || !fornecedor_id) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Campos obrigatórios: numero_proc, modalidade, fornecedor_id'
-          }
-        },
-        { status: 400 }
-      )
-    }
+    // Validar e sanitizar produtos
+    const produtos = body.produtos ? sanitizeArray(body.produtos, (p) => sanitizeObject(p, {
+      descricao: (val) => sanitizeString(val, 500),
+      unidade: (val) => sanitizeString(val, 10),
+      marca: (val) => sanitizeString(val, 100),
+      quantidade: (val) => sanitizeNumber(val, 0),
+      preco_unitario: (val) => sanitizeNumber(val, 0),
+      prazo_entrega: (val) => sanitizeNumber(val, 1)
+    })) : []
 
     // Check if numero_proc already exists
     const existingAquisicao = await db.aquisicao.findFirst({
-      where: { numero_proc }
+      where: { numero_proc: sanitizedBody.numero_proc }
     })
 
     if (existingAquisicao) {
@@ -119,25 +212,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create aquisicao
+    // Create aquisicao com dados sanitizados
     const aquisicao = await db.aquisicao.create({
       data: {
-        numero_proc,
-        modalidade,
-        fornecedor_id: parseInt(fornecedor_id),
-        numero_contrato: numero_contrato || null,
-        data_inicio: data_inicio ? new Date(data_inicio) : null,
-        data_fim: data_fim ? new Date(data_fim) : null,
-        observacoes: observacoes || null,
+        numero_proc: sanitizedBody.numero_proc,
+        modalidade: sanitizedBody.modalidade,
+        fornecedor_id: sanitizedBody.fornecedor_id,
+        numero_contrato: sanitizedBody.numero_contrato,
+        data_inicio: sanitizedBody.data_inicio,
+        data_fim: sanitizedBody.data_fim,
+        observacoes: sanitizedBody.observacoes,
         possui_aditivos: false,
-        produtos: produtos && produtos.length > 0 ? {
+        produtos: produtos.length > 0 ? {
           create: produtos.map((p: any) => ({
             descricao: p.descricao,
             unidade: p.unidade,
-            marca: p.marca || null,
-            quantidade: parseFloat(p.quantidade.toString().replace(',', '.')), // Converter string para number, substituindo vírgula por ponto
-            preco_unitario: parseFloat(p.preco_unitario),
-            prazo_entrega: p.prazo_entrega ? parseInt(p.prazo_entrega) : null
+            marca: p.marca,
+            quantidade: p.quantidade,
+            preco_unitario: p.preco_unitario,
+            prazo_entrega: p.prazo_entrega
           }))
         } : undefined
       },
@@ -148,76 +241,46 @@ export async function POST(request: NextRequest) {
     })
 
     // Criar automaticamente os produtos no catálogo (tabela Produto)
-    if (produtos && produtos.length > 0) {
-      // Buscar ou criar categoria "Geral"
-      let categoria = await db.categoria.findUnique({
-        where: { nome: 'Geral' }
+    if (produtos.length > 0) {
+      // Buscar ou criar categoria "Geral" usando upsert para evitar race conditions
+      const categoria = await db.categoria.upsert({
+        where: { nome: 'Geral' },
+        update: {},
+        create: { nome: 'Geral' }
       })
-      if (!categoria) {
-        categoria = await db.categoria.create({
-          data: { nome: 'Geral' }
-        })
-      }
 
       // Criar produtos no catálogo
       for (let i = 0; i < produtos.length; i++) {
         const p = produtos[i]
         const produtoAquisicao = aquisicao.produtos[i]
 
-        // Buscar ou criar unidade
-        let unidade = await db.unidade.findUnique({
-          where: { sigla: p.unidade.toUpperCase() }
+        // Buscar ou criar unidade usando upsert para evitar race conditions
+        const unidade = await db.unidade.upsert({
+          where: { sigla: p.unidade.toUpperCase() },
+          update: {},
+          create: { sigla: p.unidade.toUpperCase(), descricao: p.unidade }
         })
-        if (!unidade) {
-          unidade = await db.unidade.create({
-            data: { 
-              sigla: p.unidade.toUpperCase(),
-              descricao: p.unidade
-            }
-          })
-        }
 
-        // Buscar ou criar marca
-        let marca = null
+        // Buscar ou criar marca usando upsert para evitar race conditions
+        let marca: { id: number; nome: string; ativo: boolean; criado_em: Date; atualizado: Date; } | null = null
         if (p.marca) {
-          marca = await db.marca.findUnique({
-            where: { nome: p.marca.toUpperCase() }
+          marca = await db.marca.upsert({
+            where: { nome: p.marca.toUpperCase() },
+            update: {},
+            create: { nome: p.marca.toUpperCase() }
           })
-          if (!marca) {
-            marca = await db.marca.create({
-              data: { nome: p.marca.toUpperCase() }
-            })
-          }
         }
 
-        // Verificar se o produto já existe no catálogo
-        const produtoExistente = await db.produto.findFirst({
-          where: {
-            descricao: p.descricao,
-            categoria_id: categoria.id,
-            unidade_id: unidade.id
-          }
+        // Verificar se o produto já existe no catálogo usando transação para evitar race conditions
+        const produto = await db.$transaction(async (tx) => {
+          return await criarOuBuscarProduto(
+            tx,
+            p.descricao,
+            sanitizedBody.fornecedor_id,
+            categoria.id,
+            unidade.id
+          )
         })
-
-        if (!produtoExistente) {
-          // Criar código único para o produto
-          const codigo = `PAQ-${aquisicao.numero_proc}-${String(i + 1).padStart(2, '0')}`
-
-          // Criar produto no catálogo
-          await db.produto.create({
-            data: {
-              codigo,
-              descricao: p.descricao,
-              categoria_id: categoria.id,
-              unidade_id: unidade.id,
-              marca_id: marca?.id,
-              fornecedor_id: parseInt(fornecedor_id),
-              saldo_atual: 0,
-              saldo_minimo: 0,
-              ativo: true
-            }
-          })
-        }
       }
     }
 
@@ -230,16 +293,6 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error) {
-    console.error('Erro ao criar aquisição:', error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Erro ao criar aquisição'
-        }
-      },
-      { status: 500 }
-    )
+    return handleApiError(error, 'ao criar aquisição')
   }
 }

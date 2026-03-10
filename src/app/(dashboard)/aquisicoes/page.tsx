@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useFetch } from '@/hooks/use-fetch'
 import {
   Table,
   TableBody,
@@ -105,6 +106,7 @@ const modalidades = {
 
 export default function AquisicoesPage() {
   const { toast } = useToast()
+  const { fetch: authenticatedFetch } = useFetch()
   const [searchTerm, setSearchTerm] = useState('')
   const [aquisicoes, setAquisicoes] = useState<Aquisicao[]>([])
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
@@ -146,7 +148,7 @@ export default function AquisicoesPage() {
   const loadAquisicoes = async () => {
     try {
       setIsLoading(true)
-      const response = await fetch('/api/aquisicoes')
+      const response = await authenticatedFetch('/api/aquisicoes')
       const data = await response.json()
       
       if (data.success) {
@@ -174,7 +176,7 @@ export default function AquisicoesPage() {
   const loadFornecedores = async () => {
     try {
       setIsLoadingFornecedores(true)
-      const response = await fetch('/api/fornecedores')
+      const response = await authenticatedFetch('/api/fornecedores')
       const data = await response.json()
       
       if (data.success) {
@@ -193,7 +195,7 @@ export default function AquisicoesPage() {
   const loadAquisicaoForEdit = async (id: number) => {
     try {
       setIsLoading(true)
-      const response = await fetch(`/api/aquisicoes/${id}`)
+      const response = await authenticatedFetch(`/api/aquisicoes/${id}`)
       const data = await response.json()
       
       if (data.success) {
@@ -246,7 +248,7 @@ export default function AquisicoesPage() {
 
     try {
       setIsSaving(true)
-      const response = await fetch(`/api/aquisicoes/${editingAquisicaoId}`, {
+      const response = await authenticatedFetch(`/api/aquisicoes/${editingAquisicaoId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -308,7 +310,7 @@ export default function AquisicoesPage() {
     }
 
     try {
-      const response = await fetch(`/api/aquisicoes/${id}`, {
+      const response = await authenticatedFetch(`/api/aquisicoes/${id}`, {
         method: 'DELETE'
       })
 
@@ -345,7 +347,7 @@ export default function AquisicoesPage() {
       const formData = new FormData()
       formData.append('file', file)
 
-      const response = await fetch('/api/aquisicoes/importar-produtos', {
+      const response = await authenticatedFetch('/api/aquisicoes/importar-produtos', {
         method: 'POST',
         body: formData
       })
@@ -398,7 +400,7 @@ export default function AquisicoesPage() {
 
       try {
         setIsSaving(true)
-        const response = await fetch('/api/aquisicoes', {
+        const response = await authenticatedFetch('/api/aquisicoes', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'

@@ -1,13 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getAuthenticatedUser } from '@/lib/auth-middleware'
 
 // POST /api/pedidos/[id]/finalizar - Finalizar pedido e atualizar estoque
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const pedidoId = parseInt(params.id)
+    const usuario = getAuthenticatedUser(request)
+    
+    if (!usuario) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Usuário não autenticado'
+          }
+        },
+        { status: 401 }
+      )
+    }
+    
+    // No Next.js 15, params é uma Promise que precisa ser aguardada
+    const { id } = await params
+    const pedidoId = parseInt(id)
 
     // Buscar pedido com itens
     const pedido = await db.pedido.findUnique({
@@ -34,13 +52,30 @@ export async function POST(
       )
     }
 
-    if (pedido.status !== 'ABERTO') {
+    // Verificar se o pedido já foi finalizado (já tem movimentações de SAIDA)
+    const movimentacoesExistente = await db.movimentacaoEstoque.findFirst({
+      where: {
+        produto: {
+          itensPedido: {
+            some: {
+              pedido_id: pedidoId
+            }
+          }
+        },
+        tipo: 'SAIDA',
+        observacao: {
+          contains: `Saída via pedido ${pedido.numero}`
+        }
+      }
+    })
+
+    if (movimentacoesExistente) {
       return NextResponse.json(
         {
           success: false,
           error: {
-            code: 'INVALID_STATUS',
-            message: 'Apenas pedidos com status ABERTO podem ser finalizados'
+            code: 'ALREADY_FINALIZED',
+            message: 'Este pedido já foi finalizado anteriormente'
           }
         },
         { status: 400 }
@@ -65,7 +100,7 @@ export async function POST(
             saldo_anterior: produto.saldo_atual,
             saldo_novo: novoSaldo,
             observacao: `Saída via pedido ${pedido.numero}`,
-            usuario_id: 1 // TODO: Pegar usuário autenticado
+            usuario_id: usuario.id
           }
         })
 
@@ -78,28 +113,11 @@ export async function POST(
         })
       }
     }
-
-    // Atualizar status do pedido
-    const pedidoAtualizado = await db.pedido.update({
-      where: { id: pedidoId },
-      data: {
-        status: 'FINALIZADO'
-      },
-      include: {
-        secretaria: true,
-        setor: true,
-        itens: {
-          include: {
-            produto: true
-          }
-        }
-      }
-    })
-
+    
     return NextResponse.json(
       {
         success: true,
-        data: pedidoAtualizado,
+        data: pedido,
         message: 'Pedido finalizado com sucesso e estoque atualizado'
       },
       { status: 200 }

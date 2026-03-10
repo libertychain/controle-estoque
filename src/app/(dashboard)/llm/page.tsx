@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { useFetch } from '@/hooks/use-fetch'
 import {
   Bot,
   Send,
@@ -61,6 +62,7 @@ export default function LLMPage() {
   ])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const { fetch: authenticatedFetch } = useFetch()
 
   const handleSendMessage = async () => {
     if (!input.trim()) return
@@ -77,7 +79,7 @@ export default function LLMPage() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('/api/llm/chat', {
+      const response = await authenticatedFetch('/api/llm/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

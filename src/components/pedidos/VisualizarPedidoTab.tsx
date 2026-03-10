@@ -15,6 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useToast } from '@/hooks/use-toast'
+import { useFetch } from '@/hooks/use-fetch'
 import { Loader2, Printer, Edit, Trash2, Eye } from 'lucide-react'
 
 // Tipos
@@ -39,6 +40,7 @@ export interface VisualizarPedidoTabProps {
 
 export function VisualizarPedidoTab({ pedidoId, onClose, onEdit }: VisualizarPedidoTabProps) {
   const { toast } = useToast()
+  const { fetch: authenticatedFetch } = useFetch()
   const [selectedPedido, setSelectedPedido] = useState<Pedido | null>(null)
   const [isLoadingPedido, setIsLoadingPedido] = useState(false)
   
@@ -49,9 +51,9 @@ export function VisualizarPedidoTab({ pedidoId, onClose, onEdit }: VisualizarPed
   const loadPedido = async (pedidoId: number) => {
     try {
       setIsLoadingPedido(true)
-      const response = await fetch(`/api/pedidos/${pedidoId}`)
+      const response = await authenticatedFetch(`/api/pedidos/${pedidoId}`)
       const data = await response.json()
-      
+
       if (data.success) {
         setSelectedPedido(data.data.pedido)
       } else {
@@ -83,7 +85,7 @@ export function VisualizarPedidoTab({ pedidoId, onClose, onEdit }: VisualizarPed
     }
 
     try {
-      const response = await fetch(`/api/pedidos/${selectedPedido.id}`, {
+      const response = await authenticatedFetch(`/api/pedidos/${selectedPedido.id}`, {
         method: 'DELETE'
       })
 

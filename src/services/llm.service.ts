@@ -3,31 +3,25 @@
  *
  * Este serviço fornece funções para interagir com o modelo de linguagem local (Ollama).
  * É utilizado no backend para todas as operações de IA.
+ *
+ * ATUALIZAÇÃO: Agora usa os novos tipos e prompts do sistema RAG flexível.
+ * ATUALIZAÇÃO: Adicionado suporte para integração com contexto RAG.
  */
 
-export interface LLMMessage {
-  role: 'system' | 'user' | 'assistant'
-  content: string
-}
-
-export interface LLMResponse {
-  success: boolean
-  data?: any
-  error?: string
-}
-
-export interface LLMConfig {
-  model?: string
-  temperature?: number
-  max_tokens?: number
-  stream?: boolean
-}
+import { LLMMessage, LLMResponse, LLMConfig } from '@/lib/llm/types'
+import { SYSTEM_PROMPT } from '@/lib/llm/prompts'
+import { knowledgeBase, ResultadoBusca } from './knowledge-base.service'
 
 const DEFAULT_CONFIG: LLMConfig = {
-  model: 'qwen3:1.7b',
-  temperature: 0.3,
-  max_tokens: 2000,
-  stream: false
+  model: process.env.LLM_MODEL || 'qwen3:1.7b',
+  temperature: parseFloat(process.env.LLM_TEMPERATURE || '0.4'),
+  max_tokens: parseInt(process.env.LLM_MAX_TOKENS || '3000'),
+  stream: false,
+  options: {
+    num_ctx: parseInt(process.env.LLM_NUM_CTX || '8192'),
+    top_p: parseFloat(process.env.LLM_TOP_P || '0.9'),
+    top_k: parseInt(process.env.LLM_TOP_K || '40')
+  }
 }
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_URL || 'http://localhost:11434'
@@ -410,53 +404,29 @@ Responda com:
 }
 
 /**
- * Responde perguntas sobre estoque (chat)
- * OTIMIZAÇÃO 2: Prompt mais conciso (Ganho: 20-30%)
- * MELHORIA: Prompt mais robusto para melhor capacidade de busca
- * MELHORIA 3: Instruções para listar múltiplos produtos
- * MELHORIA 4: Suporte para perguntas sobre pedidos
+ * Responde perguntas sobre o sistema (chat)
+ *
+ * ATUALIZAÇÃO: Agora usa o novo system prompt flexível que permite:
+ * - Responder qualquer pergunta relacionada ao sistema
+ * - Usar documentação e dados fornecidos
+ * - Usar conhecimento externo quando apropriado
+ * - Explicar conceitos e funcionamento do sistema
+ *
+ * @param pergunta - Pergunta do usuário
+ * @param contexto - Contexto completo do sistema (documentação + dados)
+ * @returns Resposta estruturada do LLM
  */
 export async function perguntar(pergunta: string, contexto: string): Promise<LLMResponse> {
-  const systemPrompt = `Você é um assistente de estoque. SUA ÚNICA FUNÇÃO É RESPONDER BASEADO NO CONTEXTO ABAIXO.
+  // Usar o novo system prompt flexível
+  const systemPrompt = SYSTEM_PROMPT
 
-=== CONTEXTO DO ESTOQUE (USE APENAS ESTES DADOS) ===
+  // UserMessage contém o contexto e a pergunta
+  const userMessage = `CONTEXTO DO SISTEMA:
 ${contexto}
-=== FIM DO CONTEXTO ===
 
 PERGUNTA: ${pergunta}
 
-REGRAS ESTRICTAS:
-1. LEIA TODO O CONTEXTO ACIMA
-2. SE A PERGUNTA FOR SOBRE PRODUTOS (saldo, quantidade, disponibilidade):
-   - BUSQUE O PRODUTO POR: código, descrição, palavras-chave
-   - SE ENCONTRAR APENAS UM PRODUTO: responda com os dados EXATOS desse produto
-   - SE ENCONTRAR MÚLTIPLOS PRODUTOS: LISTE TODOS com seus códigos, descrições e saldos
-   - SE NÃO ENCONTRAR: responda "Não encontrei esse produto no contexto"
-3. SE A PERGUNTA FOR SOBRE PEDIDOS (último pedido, pedidos de um produto, histórico):
-   - VERIFIQUE se há informações sobre pedidos no contexto
-   - SE HOUVER pedidos, responda baseado nessas informações
-   - SE NÃO HOUVER pedidos, responda "Não há informações sobre pedidos no contexto"
-4. NUNCA invente dados que não estejam no contexto
-5. NUNCA use conhecimento externo ou geral
-
-EXEMPLOS DE RESPOSTA CORRETA:
-- Um produto encontrado: "O produto [CÓDIGO] - [DESCRIÇÃO] tem saldo de [SALDO] [UNIDADE]"
-- Múltiplos produtos encontrados: "Encontrei [N] produtos: 1) [CÓDIGO1] - [DESCRIÇÃO1] (Saldo: [SALDO1] [UNIDADE1]), 2) [CÓDIGO2] - [DESCRIÇÃO2] (Saldo: [SALDO2] [UNIDADE2]), ..."
-- Produto não encontrado: "Não encontrei esse produto no contexto"
-- Pedido encontrado: "O último pedido de [PRODUTO] foi feito em [DATA] para [SETOR/SECRETARIA] - [NÚMERO DO PEDIDO], com [QUANTIDADE] unidades"
-- Lista de pedidos: "Encontrei [N] pedidos: 1) [NÚMERO] - [DATA] - [SETOR], 2) [NÚMERO] - [DATA] - [SETOR], ..."
-- Pedido não encontrado: "Não encontrei pedidos para esse produto no contexto"
-- Sem informações: "Não há informações sobre pedidos no contexto"
-
-Responda APENAS com este JSON:
-{
-  "resposta": "Sua resposta baseada APENAS no contexto acima. Liste TODOS os produtos encontrados se houver múltiplos.",
-  "contexto": {
-    "tipo_resposta": "DADO",
-    "dados_utilizados": ["códigos dos produtos usados"]
-  },
-  "acoes_sugeridas": null
-}`
+Responda com o formato JSON especificado no system prompt.`
 
   const messages: LLMMessage[] = [
     {
@@ -465,15 +435,12 @@ Responda APENAS com este JSON:
     },
     {
       role: 'user',
-      content: pergunta
+      content: userMessage
     }
   ]
 
-  // Otimizações do modelo mantidas
-  const response = await callOllama(messages, { 
-    temperature: 0.3,  // Reduzido para respostas mais determinísticas
-    max_tokens: 1000  // Mantido para menos tokens a gerar
-  })
+  // Usar configuração padrão (llama3:8b com parâmetros otimizados)
+  const response = await callOllama(messages)
 
   if (response.success && response.data) {
     try {
@@ -544,6 +511,78 @@ Responda com:
       }
     } catch (error) {
       console.error('Erro ao parsear JSON da LLM:', error)
+    }
+  }
+
+  return response
+}
+
+/**
+ * Gera resposta com contexto RAG
+ * 
+ * Este método busca contexto relevante na Knowledge Base e o inclui
+ * na resposta do LLM para fornecer informações mais precisas.
+ * 
+ * @param pergunta - Pergunta do usuário
+ * @param contexto - Contexto adicional do sistema (opcional)
+ * @returns Resposta do LLM com contexto RAG
+ */
+export async function perguntarComRAG(
+  pergunta: string,
+  contexto?: string
+): Promise<LLMResponse> {
+  console.log(`🔍 Buscando contexto RAG para pergunta: "${pergunta}"`)
+
+  // Buscar contexto relevante na Knowledge Base
+  const inicioBusca = Date.now()
+  const resultadosRAG = await knowledgeBase.buscarContexto(pergunta, 3)
+  const tempoBusca = Date.now() - inicioBusca
+
+  console.log(`⏱️  Tempo de busca RAG: ${tempoBusca}ms`)
+  console.log(`📊 Contextos encontrados: ${resultadosRAG.length}`)
+
+  // Construir contexto RAG formatado
+  let contextoRAG = ''
+
+  if (resultadosRAG.length > 0) {
+    contextoRAG = '\n\n## Contexto RAG (Aquisições Relevantes)\n\n'
+
+    resultadosRAG.forEach((resultado, index) => {
+      contextoRAG += `### Aquisição ${index + 1}: ${resultado.contexto.aquisicao.numero}\n`
+      contextoRAG += `- Fornecedor: ${resultado.contexto.aquisicao.fornecedor}\n`
+      contextoRAG += `- Modalidade: ${resultado.contexto.aquisicao.modalidade}\n`
+      contextoRAG += `- Score de relevância: ${resultado.score.toFixed(2)}\n\n`
+
+      if (resultado.produtos_relevantes.length > 0) {
+        contextoRAG += `**Produtos Relevantes:**\n`
+        resultado.produtos_relevantes.forEach(produto => {
+          contextoRAG += `- ${produto.descricao}\n`
+          contextoRAG += `  Descrição enriquecida: ${produto.descricao_enriquecida}\n`
+          contextoRAG += `  Palavras-chave: ${produto.palavras_chave.join(', ')}\n`
+          contextoRAG += `  Score: ${produto.score.toFixed(2)}\n\n`
+        })
+      }
+    })
+
+    contextoRAG += '---\n\n'
+  }
+
+  // Combinar contexto RAG com contexto adicional
+  const contextoCompleto = contextoRAG + (contexto || '')
+
+  // Usar o método perguntar existente com o contexto completo
+  const response = await perguntar(pergunta, contextoCompleto)
+
+  // Adicionar metadados sobre o contexto RAG usado
+  if (response.success && response.data) {
+    response.data.contexto_rag = {
+      encontrados: resultadosRAG.length,
+      tempo_busca_ms: tempoBusca,
+      aquisicoes: resultadosRAG.map(r => ({
+        id: r.contexto.aquisicao.id,
+        numero: r.contexto.aquisicao.numero,
+        score: r.score
+      }))
     }
   }
 

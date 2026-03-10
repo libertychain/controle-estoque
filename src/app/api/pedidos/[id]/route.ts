@@ -1,11 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getAuthenticatedUser, requirePermission } from '@/lib/auth-middleware'
 
 // GET /api/pedidos/[id] - Buscar pedido individual
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const usuario = getAuthenticatedUser(request)
+  
+  if (!usuario) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Usuário não autenticado'
+        }
+      },
+      { status: 401 }
+    )
+  }
+  
   try {
     const { id } = await params
     const pedidoId = parseInt(id)
@@ -90,6 +106,27 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const usuario = getAuthenticatedUser(request)
+    
+    if (!usuario) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Usuário não autenticado'
+          }
+        },
+        { status: 401 }
+      )
+    }
+
+    // Verificar se o usuário tem permissão de ADMIN para excluir pedidos
+    const permissionError = await requirePermission(request, [1]) // 1 = perfil ADMIN
+    if (permissionError) {
+      return permissionError
+    }
+    
     const { id } = await params
     const pedidoId = parseInt(id)
 
@@ -172,7 +209,7 @@ export async function DELETE(
             saldo_anterior: saldo_anterior,
             saldo_novo: saldo_novo,
             observacao: `Devolução ao estoque devido à exclusão do pedido ${pedido.numero}`,
-            usuario_id: 1 // TODO: Get from authenticated user
+            usuario_id: usuario.id
           }
         })
 
@@ -223,6 +260,21 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const usuario = getAuthenticatedUser(request)
+    
+    if (!usuario) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Usuário não autenticado'
+          }
+        },
+        { status: 401 }
+      )
+    }
+    
     const { id } = await params
     const pedidoId = parseInt(id)
 
@@ -354,6 +406,25 @@ export async function PUT(
                 create: { sigla: produtoAquisicao.unidade, descricao: produtoAquisicao.unidade }
               })
 
+              // Buscar itens de pedidos anteriores para calcular o saldo inicial correto
+              const itensPedidosAnteriores = await db.itemPedido.findMany({
+                where: {
+                  produto: {
+                    descricao: produtoAquisicao.descricao,
+                    fornecedor_id: produtoAquisicao.aquisicao.fornecedor.id
+                  }
+                }
+              })
+
+              // Calcular quantidade já utilizada em pedidos anteriores
+              const quantidadeUtilizada = itensPedidosAnteriores.reduce(
+                (total, item) => total + item.quantidade,
+                0
+              )
+
+              // Saldo inicial = quantidade da aquisição - quantidade já utilizada em pedidos anteriores
+              const saldoInicial = Math.max(0, produtoAquisicao.quantidade - quantidadeUtilizada)
+
               // Criar novo Produto
               let marcaId: number | null = null
               if (produtoAquisicao.marca) {
@@ -373,7 +444,7 @@ export async function PUT(
                   unidade_id: unidade.id,
                   fornecedor_id: produtoAquisicao.aquisicao.fornecedor.id,
                   marca_id: marcaId,
-                  saldo_atual: produtoAquisicao.quantidade,
+                  saldo_atual: saldoInicial,
                   saldo_minimo: 0
                 }
               })
@@ -489,7 +560,7 @@ export async function PUT(
               saldo_anterior,
               saldo_novo,
               observacao,
-              usuario_id: 1 // TODO: Get from authenticated user
+              usuario_id: usuario.id
             }
           })
 

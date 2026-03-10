@@ -4,10 +4,11 @@ import { db } from '@/lib/db'
 // GET /api/aquisicoes/[id] - Buscar aquisição por ID
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = parseInt(params.id)
+    const { id } = await params
+    const parsedId = parseInt(id)
 
     if (isNaN(id)) {
       return NextResponse.json(
@@ -65,12 +66,13 @@ export async function GET(
 // PUT /api/aquisicoes/[id] - Atualizar aquisição
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = parseInt(params.id)
+    const { id } = await params
+    const parsedId = parseInt(id)
 
-    if (isNaN(id)) {
+    if (isNaN(parsedId)) {
       return NextResponse.json(
         {
           success: false,
@@ -112,7 +114,7 @@ export async function PUT(
 
     // Check if aquisicao exists
     const existingAquisicao = await db.aquisicao.findUnique({
-      where: { id }
+      where: { id: parsedId }
     })
 
     if (!existingAquisicao) {
@@ -132,7 +134,7 @@ export async function PUT(
     const duplicateAquisicao = await db.aquisicao.findFirst({
       where: {
         numero_proc,
-        id: { not: id }
+        id: { not: parsedId }
       }
     })
 
@@ -151,7 +153,7 @@ export async function PUT(
 
     // Update aquisicao
     const aquisicao = await db.aquisicao.update({
-      where: { id },
+      where: { id: parsedId },
       data: {
         numero_proc,
         modalidade,
@@ -207,12 +209,13 @@ export async function PUT(
 // DELETE /api/aquisicoes/[id] - Excluir aquisição
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = parseInt(params.id)
+    const { id } = await params
+    const parsedId = parseInt(id)
 
-    if (isNaN(id)) {
+    if (isNaN(parsedId)) {
       return NextResponse.json(
         {
           success: false,
@@ -227,7 +230,7 @@ export async function DELETE(
 
     // Check if aquisicao exists
     const existingAquisicao = await db.aquisicao.findUnique({
-      where: { id }
+      where: { id: parsedId }
     })
 
     if (!existingAquisicao) {
@@ -245,7 +248,7 @@ export async function DELETE(
 
     // Delete aquisicao (cascade delete will handle related records)
     await db.aquisicao.delete({
-      where: { id }
+      where: { id: parsedId }
     })
 
     return NextResponse.json(

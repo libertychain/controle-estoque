@@ -38,6 +38,7 @@ model Usuario {
   criado_em   DateTime     @default(now())
   atualizado  DateTime     @updatedAt
   auditorias  Auditoria[]
+  movimentacoes MovimentacaoEstoque[]
 
   @@map("usuarios")
 }
@@ -151,6 +152,7 @@ model Produto {
   movimentacoes   MovimentacaoEstoque[]
   itensPedido     ItemPedido[]
 
+  @@unique([descricao, fornecedor_id], name: "produto_descricao_fornecedor_unique")
   @@map("produtos")
 }
 
@@ -165,6 +167,7 @@ model MovimentacaoEstoque {
   data            DateTime     @default(now())
   observacao      String?
   usuario_id      Int
+  usuario         Usuario      @relation(fields: [usuario_id], references: [id])
 
   @@map("movimentacoes_estoque")
 }
@@ -187,9 +190,15 @@ model Aquisicao {
   ativo           Boolean              @default(true)
   criado_em       DateTime             @default(now())
   atualizado      DateTime             @updatedAt
+  
+  // Campos para RAG
+  contexto_gerado      Boolean  @default(false)
+  contexto_data        DateTime?
+  contexto_versao      String?  @default("1.0")
 
   aditivos        AditivoContrato[]
   produtos        ProdutoAquisicao[]
+  contexto_rag    ContextoRAG?
 
   @@map("aquisicoes")
 }
@@ -219,6 +228,23 @@ model ProdutoAquisicao {
   criado_em       DateTime     @default(now())
 
   @@map("produtos_aquisicao")
+}
+
+// ============================================
+// RAG - RETRIEVAL AUGMENTED GENERATION
+// ============================================
+
+model ContextoRAG {
+  id                   Int        @id @default(autoincrement())
+  aquisicao_id         Int        @unique
+  aquisicao            Aquisicao  @relation(fields: [aquisicao_id], references: [id])
+  dados                String     // JSON com contexto completo
+  versao               String     @default("1.0")
+  data_geracao         DateTime   @default(now())
+  data_atualizacao     DateTime   @updatedAt
+  metadados            String?    // JSON com metadados adicionais
+
+  @@map("contextos_rag")
 }
 
 // ============================================
